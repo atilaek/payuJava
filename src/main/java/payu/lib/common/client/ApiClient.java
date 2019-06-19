@@ -1,77 +1,39 @@
 package payu.lib.common.client;
 
-import com.PMI.payu.Backend.domain.auth.AuthResponse;
+import com.PMI.payu.Backend.domain.oauth.get.GetOAuthResponse;
 import org.apache.http.HttpException;
+import org.apache.http.HttpRequest;
 import org.apache.http.HttpResponse;
-import org.apache.http.NameValuePair;
-import org.apache.http.client.entity.UrlEncodedFormEntity;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.entity.StringEntity;
-import org.apache.http.util.EntityUtils;
-import org.json.JSONObject;
-import payu.lib.common.authentication.ApiAuthenticationService;
-import payu.lib.common.authentication.InvalidSignatureException;
+import org.apache.http.protocol.HTTP;
+import payu.lib.common.exceptions.HttpCommunicationException;
+import payu.lib.common.exceptions.ResponseParsingException;
 
-import java.io.IOException;
-import java.io.UnsupportedEncodingException;
-import java.nio.charset.StandardCharsets;
-import java.util.List;
-
-public class ApiClient {
+class ApiClient {
     private final ApiHttpClient apiHttpClient;
-    private final ApiAuthenticationService apiAuthenticationService;
     private final ResponseParser apiResponseParser;
 
-
-    public ApiClient(ApiHttpClient apiHttpClient, ApiAuthenticationService apiAuthenticationService, ResponseParser apiResponseParser) {
+    ApiClient(ApiHttpClient apiHttpClient, ResponseParser apiResponseParser) {
         this.apiHttpClient = apiHttpClient;
-        this.apiAuthenticationService = apiAuthenticationService;
         this.apiResponseParser = apiResponseParser;
     }
 
-    public Object call(final String endpoint, JSONObject Jsonobject,
-                       final AuthResponse authResponse) throws CommunicationException, InvalidXmlResponseParsingException, InvalidSignatureException, UnsupportedEncodingException {
+    HttpRequest fillOAuthTokenHeader(final GetOAuthResponse getOAuthResponse,
+                                     final HttpRequest httpRequest) {
 
-        final HttpPost httpRequest = new HttpPost(endpoint);
-        httpRequest.setHeader("Authorization", authResponse.getToken_type() + " " + authResponse.getAccess_token());
-        httpRequest.setHeader("Content-Type", "application/json");
+        httpRequest.setHeader("Authorization", getOAuthResponse.getToken_type() + " " + getOAuthResponse.getAccess_token());
+        httpRequest.setHeader(HTTP.CONTENT_TYPE, "application/json");
+        return httpRequest;
+    }
 
-        httpRequest.setEntity(new StringEntity(Jsonobject.toString(), "UTF8"));
+    Object callClient(final HttpRequest httpRequest) throws HttpCommunicationException, ResponseParsingException {
 
-        final HttpResponse httpResponse;
+        HttpResponse httpResponse;
         try {
             httpResponse = apiHttpClient.callHttp(httpRequest);
         } catch (HttpException e) {
-            throw new CommunicationException(e);
-        } catch (Error e) {
-            throw new Error(e);
+            throw new HttpCommunicationException(e);
         }
 
-        final Object response = apiResponseParser.parseResponse(httpResponse);
-
-        return response;
+        return apiResponseParser.parseResponse(httpResponse);
     }
-    public Object call2(final String endpoint, final List<NameValuePair> requestParameters, final AuthResponse authResponse) throws CommunicationException, InvalidXmlResponseParsingException, InvalidSignatureException {
-
-        final List<NameValuePair> requestParametersWithSignature = apiAuthenticationService.addSignature(requestParameters);
-
-        final HttpPost httpRequest = new HttpPost(endpoint);
-        httpRequest.setHeader("Authorization", authResponse.getToken_type() + " " + authResponse.getAccess_token());
-        httpRequest.setHeader("Content-Type", "application/json");
-
-        httpRequest.setEntity(new StringEntity(requestParameters.toString(), StandardCharsets.UTF_8));
-
-        // call http and obtain response
-        final HttpResponse httpResponse;
-        try {
-            httpResponse = apiHttpClient.callHttp(httpRequest);
-        } catch (HttpException e) {
-            throw new CommunicationException(e);
-        }
-
-        final Object response = apiResponseParser.parseResponse(httpResponse);
-
-        return response;
-    }
-
 }

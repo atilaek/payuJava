@@ -1,293 +1,185 @@
 package com.PMI.payu.Backend;
 
-import com.PMI.payu.Backend.domain.alu.request.Order;
-import com.PMI.payu.Backend.domain.alu.request.Product;
-import com.PMI.payu.Backend.domain.alu.response.AluResponse;
-import com.PMI.payu.Backend.domain.auth.AuthRequest;
-import com.PMI.payu.Backend.domain.auth.AuthResponse;
-import org.apache.http.NameValuePair;
-import org.joda.money.Money;
+import com.PMI.payu.Backend.domain.common.response.Response;
+import com.PMI.payu.Backend.domain.oauth.delete.DeleteOAuthResponse;
+import com.PMI.payu.Backend.domain.oauth.get.GetOAuthRequest;
+import com.PMI.payu.Backend.domain.oauth.get.GetOAuthResponse;
+import com.PMI.payu.Backend.domain.order.cancel.response.OrderCancelResponse;
+import com.PMI.payu.Backend.domain.order.create.request.OrderCreateRequest;
+import com.PMI.payu.Backend.domain.order.create.request.Product;
+import com.PMI.payu.Backend.domain.order.create.response.OrderCreateResponse;
+import com.PMI.payu.Backend.domain.order.update.request.OrderStatus;
+import com.PMI.payu.Backend.domain.order.update.request.OrderUpdateRequest;
+import com.PMI.payu.Backend.domain.order.update.response.OrderUpdateResponse;
 import org.json.JSONObject;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import payu.basis.idn.IdnRequestParametersBuilder;
-import payu.basis.idn.IdnResponseInterpreter;
-import payu.basis.ios.IosRequestParametersBuilder;
-import payu.basis.ios.IosResponseInterpreter;
-import payu.basis.ipn.IpnHttpServer;
-import payu.basis.ipn.IpnHttpServerBuilder;
-import payu.basis.ipn.IpnRequestProcessor;
-import payu.basis.irn.IrnRequestParametersBuilder;
-import payu.basis.irn.IrnResponseInterpreter;
-import payu.lib.alu.AluAuthenticationService;
-import payu.lib.alu.AluClient;
-import payu.lib.alu.AluResponseParser;
-import payu.lib.auth.AuthResponseParser;
-import payu.lib.common.authentication.AuthenticationService;
-import payu.lib.common.authentication.InvalidSignatureException;
-import payu.lib.common.authentication.SignatureCalculator;
-import payu.lib.common.client.*;
-import payu.lib.idn.IdnAuthenticationService;
-import payu.lib.idn.IdnClient;
-import payu.lib.idn.IdnResponseParser;
-import payu.lib.ios.IosAuthenticationService;
-import payu.lib.ios.IosClient;
-import payu.lib.ios.IosResponseParser;
-import payu.lib.irn.IrnAuthenticationService;
-import payu.lib.irn.IrnClient;
-import payu.lib.irn.IrnResponseParser;
+import payu.lib.common.client.ApiDeleteClient;
+import payu.lib.common.client.ApiHttpClient;
+import payu.lib.common.client.ApiPostClient;
+import payu.lib.common.client.ApiPutClient;
+import payu.lib.common.exceptions.HttpCommunicationException;
+import payu.lib.common.exceptions.ResponseParsingException;
+import payu.lib.oauth.delete.DeleteOAuthClient;
+import payu.lib.oauth.delete.DeleteOAuthResponseParser;
+import payu.lib.oauth.get.GetOAuthClient;
+import payu.lib.oauth.get.GetOAuthResponseParser;
+import payu.lib.order.cancel.OrderCancelClient;
+import payu.lib.order.cancel.OrderCancelResponseParser;
+import payu.lib.order.create.OrderCreateClient;
+import payu.lib.order.create.OrderCreateResponseParser;
+import payu.lib.order.update.OrderUpdateClient;
+import payu.lib.order.update.OrderUpdateResponseParser;
 
 import java.util.ArrayList;
 import java.util.Currency;
 import java.util.List;
-import java.util.UUID;
 
 @SpringBootApplication
 public class BackendApplication {
 
-	private static final String SERVER_SCHEMA = "https";
-	private static final int SERVER_PORT = 443;
-	private static final String SERVER_HOST = "secure.snd.payu.com";
-
-	// production connection settings
+    private static final String SERVER_SCHEMA = "https";
+    private static final int SERVER_PORT = 443;
+    private static final String SERVER_HOST = "secure.snd.payu.com";
+    // production connection settings
 //    private static final String SERVER_SCHEMA = "https";
 //    private static final int SERVER_PORT = 443;
 //    private static final String SERVER_HOST = "secure.payu.com.tr";
 
-	private static final String MERCHANT_CODE = "357269";
-	private static final String MERCHANT_SECRET_KEY = "26cdcf1941547d273da485b5ce5dc3d4";
-
-
-	// production credentials
+    private static final String MERCHANT_CODE = "357269";
+    private static final String MERCHANT_SECRET_KEY = "26cdcf1941547d273da485b5ce5dc3d4";
+    // production credentials
 //    private static final String MERCHANT_CODE = "???????";
 //    private static final String MERCHANT_SECRET_KEY = "??????";
 
-	private static payu.lib.auth.AuthClient authClient;
-	private static AluClient aluClient;
-	private static IdnClient idnClient;
-	private static IrnClient irnClient;
-	private static IosClient iosClient;
+    private static GetOAuthClient getOAuthClient;
+    private static DeleteOAuthClient deleteOAuthClient;
+    private static OrderCreateClient orderCreateClient;
+    private static OrderCancelClient orderCancelClient;
+    private static OrderUpdateClient orderUpdateClient;
 
-
-	private static IosRequestParametersBuilder iosRequestParametersBuilder;
-	private static IosResponseInterpreter iosResponseInterpreter;
-
-	private static IdnRequestParametersBuilder idnRequestParametersBuilder;
-	private static IdnResponseInterpreter idnResponseInterpreter;
-
-	private static IrnRequestParametersBuilder irnRequestParametersBuilder;
-	private static IrnResponseInterpreter irnResponseInterpreter;
-
-	private static IpnHttpServer ipnHttpServer;
-	private static IpnRequestProcessor ipnRequestProcessor;
-
-
-
-	public static void main(String[] args) {
-		SpringApplication.run(BackendApplication.class, args);
-
-		setUp();
-
-		try {
-////////////////////////////////////////////
-
-
-			AuthRequest authReq = new AuthRequest("client_credentials",
-					MERCHANT_CODE, MERCHANT_SECRET_KEY);
-
-            AuthResponse authResponse = callAuth(authReq.getParameters());
-
-
-
-
-
-            ////////////////////////////////////////
-
-
-			Order myOrder = null;
-			List<Product> products= new ArrayList<>();
-			products.add(new Product("Wireless Mouse",
-					15000,1));
-			products.add(new Product("HDMI cable",
-					6000,1));
-			myOrder = new Order("123.123.123.123", MERCHANT_CODE,
-					"Order description",
-					Currency.getInstance("PLN"),
-					products);
-/*
-			final List<NameValuePair> requestParams =
-                    aluCommunicator.buildAluRequestParameters(myOrder, myProducts,
-                            myBilling, myCard,
-                            Optional.of(myDelivery), Optional.empty(),
-							Optional.empty());
-*/
-			String myOrderReference = UUID.randomUUID().toString().substring(0, 17);
-
-
-			//ALU automatic Live Update  -  redirected to payu platform’s payment page,
-			setExpectedIpn(myOrderReference);
-            AluResponse aluResponse = callAlu(myOrder.getJSONObject(), authResponse);
-			aluResponse.toString();
-			waitForIpn();
-			callIos(myOrderReference);
-
-
-			////////////////////////////////////////
-
-
-
-			//ALU - Automatic Live Update (ALU) - place transactions directly in the PayU system
-			//IPN - Instant Payment Notification (IPN) - data about a transaction that has been successfully authorized and approved.
-			//IOS - Instant Request Status (IOS) - the status of an order.
-			//IDN - Instant Delivery Notification (IDN) - automatic delivery confirmations
-			//IRN - Instant Reverse/Refund Notification (IRN) -
-
-/*
-			String orderReference = UUID.randomUUID().toString().substring(0, 17);
-			Money amount = Money.of(CurrencyUnit.of("TRY"), 196);
-			String payuOrderReference = "";
-
-
-			//ALU automatic Live Update  -  redirected to payu platform’s payment page,
-			setExpectedIpn(orderReference);
-			Map.Entry<String, Money> refNoAmountPair = callAlu(orderReference, amount);
-			amount = refNoAmountPair.getValue();
-			payuOrderReference = refNoAmountPair.getKey();
-			waitForIpn();
-			callIos(orderReference);
-
-
-			//Instant Delivery Notification - Request Confirmation
-			setExpectedIpn(orderReference);
-			callIdn(payuOrderReference, amount);
-			waitForIpn();
-			callIos(orderReference);
-
-
-			//Instant Refund Notification
-			setExpectedIpn(orderReference);
-			callIrn(payuOrderReference, amount);
-			waitForIpn();
-			callIos(orderReference);
-*/
-		} catch (Exception e) {
-			e.printStackTrace();
-		} finally {
-			ipnHttpServer.stop();
-		}
-	}
-
-	public static AuthResponse callAuth(final List<NameValuePair> authRequestParameters) throws CommunicationException, InvalidXmlResponseParsingException, InvalidSignatureException {
-		System.out.println(authRequestParameters);
-		final AuthResponse authResponse = authClient.call(authRequestParameters);
-		return authResponse;
-	}
-
-    public static AluResponse callAlu(final JSONObject jsonobject,
-                                      final AuthResponse authResponse) throws CommunicationException, InvalidXmlResponseParsingException, InvalidSignatureException {
-        System.out.println(jsonobject);
-        final AluResponse aluResponse = aluClient.call(jsonobject, authResponse);
-        return aluResponse;
+    public static void main(String[] args) {
+        SpringApplication.run(BackendApplication.class, args);
+        setUp();
+        final GetOAuthRequest getOAuthRequest = new GetOAuthRequest("client_credentials",
+                MERCHANT_CODE, MERCHANT_SECRET_KEY);
+        final GetOAuthResponse getOAuthResponse = getOAuthToken(getOAuthRequest);
+        if (getOAuthResponse != null) System.out.println(getOAuthResponse.toString());
+        ////////////////////////////////////////
+        List<Product> products = new ArrayList<>();
+        products.add(new Product("Wireless Mouse",
+                15000, 1));
+        products.add(new Product("HDMI cable",
+                6000, 1));
+        OrderCreateRequest orderCreateRequest = new OrderCreateRequest("123.123.123.123", MERCHANT_CODE,
+                "Order description",
+                Currency.getInstance("PLN"),
+                products);
+        OrderCreateResponse orderCreateResponse = callForCreateOrder(orderCreateRequest.getJSONObject(), getOAuthResponse);
+        if (orderCreateResponse != null) System.out.println(orderCreateResponse.toString());
+        ////////////////////////////////////////
+        OrderUpdateRequest orderUpdateRequest
+                = new OrderUpdateRequest(orderCreateResponse.getOrderId(),
+                OrderStatus.WAITING_FOR_CONFIRMATION);
+        OrderUpdateResponse orderUpdateResponse =
+                callForOrderUpdate(orderUpdateRequest, getOAuthResponse);
+        if (orderUpdateResponse != null) System.out.println(orderUpdateResponse.toString());
+        ////////////////////////////////////////
+        OrderCancelResponse orderCancelResponse =
+                callForOrderCancellation(orderCreateResponse, getOAuthResponse);
+        if (orderCancelResponse != null) System.out.println(orderCancelResponse.toString());
+        ////////////////////////////////////////
+        DeleteOAuthResponse deleteOAuthResponse = deleteOAuthToken(getOAuthResponse);
+        if (deleteOAuthResponse != null) System.out.println(deleteOAuthResponse.toString());
     }
 
-    private static RuntimeException unsuccessfulResponseThrower(final String requestType, final List<NameValuePair> responseParameters) {
-		String values = "";
-		responseParameters.forEach(pair -> values.concat(pair.getName() + ":" + pair.getValue() + "\n"));
-		throw new RuntimeException(requestType.toUpperCase() + " response ERROR!" + "\n" + values);
-	}
-
-	private static void setExpectedIpn(String orderReference) {
-		ipnRequestProcessor.setExpectedIpn(orderReference);
-	}
-
-	private static void waitForIpn() {
-		ipnRequestProcessor.waitForIpn();
-	}
-
-	private static void callIdn(String payuOrderReference, Money amount) throws CommunicationException, InvalidXmlResponseParsingException, InvalidSignatureException {
-
-		final List<NameValuePair> idnRequestParameters = idnRequestParametersBuilder.build(payuOrderReference, amount);
-
-		final List<NameValuePair> idnResponseParameters = idnClient.call(idnRequestParameters);
-
-		idnResponseInterpreter.interpretResponseParameters(idnResponseParameters);
-		if (!idnResponseInterpreter.isSuccess(idnResponseParameters)) {
-            unsuccessfulResponseThrower("IDN" , idnResponseParameters);
-		}
-	}
-
-	private static void callIrn(String payuOrderReference, Money amount) throws CommunicationException, InvalidXmlResponseParsingException, InvalidSignatureException {
-		final List<NameValuePair> irnRequestParameters = irnRequestParametersBuilder.build(payuOrderReference, amount);
-
-		final List<NameValuePair> irnResponseParameters = irnClient.call(irnRequestParameters);
-
-		irnResponseInterpreter.interpretResponseParameters(irnResponseParameters);
-		if (!irnResponseInterpreter.isSuccess(irnResponseParameters)) {
-            unsuccessfulResponseThrower("IRN" , irnResponseParameters);
+    public static GetOAuthResponse getOAuthToken(final GetOAuthRequest getOAuthRequest) {
+        GetOAuthResponse getOAuthResponse = null;
+        try {
+            getOAuthResponse = getOAuthClient.call(getOAuthRequest);
+        } catch (HttpCommunicationException e) {
+            System.out.println(e.toString());
+        } catch (ResponseParsingException e) {
+            System.out.println(e.toString());
         }
-	}
+        return getOAuthResponse;
+    }
 
-	private static void callIos(String orderReference) throws CommunicationException, InvalidXmlResponseParsingException, InvalidSignatureException {
-		final List<NameValuePair> iosRequestParameters = iosRequestParametersBuilder.build(orderReference);
-
-		final List<NameValuePair> iosResponseParameters = iosClient.call(iosRequestParameters);
-
-		iosResponseInterpreter.interpretResponseParameters(iosResponseParameters);
-		if (!iosResponseInterpreter.isSuccess(iosResponseParameters)) {
-            unsuccessfulResponseThrower("IOS" , iosResponseParameters);
+    public static DeleteOAuthResponse deleteOAuthToken(final GetOAuthResponse getOAuthResponse) {
+        DeleteOAuthResponse deleteOAuthResponse = null;
+        try {
+            deleteOAuthResponse = deleteOAuthClient.call(getOAuthResponse);
+        } catch (HttpCommunicationException e) {
+            System.out.println(e.toString());
         }
-	}
+        return deleteOAuthResponse;
+    }
 
-	private static void setUp() {
+    public static OrderCreateResponse callForCreateOrder(final JSONObject jsonobject,
+                                                         final GetOAuthResponse getOAuthResponse) {
+        OrderCreateResponse createOrderResponse = null;
+        try {
+            createOrderResponse = orderCreateClient.call(jsonobject, getOAuthResponse);
+        } catch (HttpCommunicationException e) {
+            System.out.println(e.toString());
+        } catch (ResponseParsingException e) {
+            System.out.println(e.toString());
+        }
+        return createOrderResponse;
+    }
 
-		final ApiHttpClient apiHttpClient = new ApiHttpClient(SERVER_HOST, SERVER_PORT, SERVER_SCHEMA);
-		final AuthenticationService authenticationService = new AuthenticationService(
-				new SignatureCalculator(),
-				MERCHANT_SECRET_KEY
-		);
-		final XmlResponseParser xmlResponseParser = new XmlResponseParser();
+    public static OrderCancelResponse callForOrderCancellation(final Response response,
+                                                               final GetOAuthResponse getOAuthResponse) {
+        OrderCancelResponse orderCancelResponse = null;
+        try {
+            orderCancelResponse = orderCancelClient.call(response, getOAuthResponse);
+        } catch (HttpCommunicationException e) {
+            System.out.println(e.toString());
+        } catch (ResponseParsingException e) {
+            System.out.println(e.toString());
+        }
+        return orderCancelResponse;
+    }
 
-		authClient = new payu.lib.auth.AuthClient(
-				apiHttpClient,
-				new AuthResponseParser()
-		);
+    public static OrderUpdateResponse callForOrderUpdate(final OrderUpdateRequest orderUpdateRequest,
+                                                         final GetOAuthResponse getOAuthResponse) {
+        OrderUpdateResponse orderUpdateResponse = null;
+        try {
+            orderUpdateResponse = orderUpdateClient.call(orderUpdateRequest, getOAuthResponse);
+        } catch (HttpCommunicationException e) {
+            System.out.println(e.toString());
+        } catch (ResponseParsingException e) {
+            System.out.println(e.toString());
+        }
+        return orderUpdateResponse;
+    }
 
-		aluClient = new AluClient(new ApiClient(
-				apiHttpClient,
-				new AluAuthenticationService(authenticationService),
-				new AluResponseParser()
-		));
+    private static void setUp() {
 
-		iosClient = new IosClient(new ApiClient(
-				apiHttpClient,
-				new IosAuthenticationService(authenticationService),
-				new IosResponseParser(xmlResponseParser)
-		));
+        final ApiHttpClient apiHttpClient = new ApiHttpClient(SERVER_HOST, SERVER_PORT, SERVER_SCHEMA);
+        getOAuthClient = new GetOAuthClient(new ApiPostClient(
+                apiHttpClient,
+                new GetOAuthResponseParser()
+        ));
 
-		idnClient = new IdnClient(new ApiClient(
-				apiHttpClient,
-				new IdnAuthenticationService(authenticationService),
-				new IdnResponseParser(xmlResponseParser)
-		));
+        deleteOAuthClient = new DeleteOAuthClient(
+                apiHttpClient,
+                new DeleteOAuthResponseParser()
+        );
 
-		irnClient = new IrnClient(new ApiClient(
-				apiHttpClient,
-				new IrnAuthenticationService(authenticationService),
-				new IrnResponseParser(xmlResponseParser)
-		));
+        orderCreateClient = new OrderCreateClient(new ApiPostClient(
+                apiHttpClient,
+                new OrderCreateResponseParser()
+        ));
 
-		iosRequestParametersBuilder = new IosRequestParametersBuilder(MERCHANT_CODE);
-		iosResponseInterpreter = new IosResponseInterpreter();
+        orderCancelClient = new OrderCancelClient(new ApiDeleteClient(
+                apiHttpClient,
+                new OrderCancelResponseParser()
+        ));
 
-		idnRequestParametersBuilder = new IdnRequestParametersBuilder(MERCHANT_CODE);
-		idnResponseInterpreter = new IdnResponseInterpreter();
-
-		irnRequestParametersBuilder = new IrnRequestParametersBuilder(MERCHANT_CODE);
-		irnResponseInterpreter = new IrnResponseInterpreter();
-
-		ipnRequestProcessor = new IpnRequestProcessor();
-		ipnHttpServer = IpnHttpServerBuilder.createServer(ipnRequestProcessor, authenticationService);
-		ipnHttpServer.start();
-
-	}
+        orderUpdateClient = new OrderUpdateClient(new ApiPutClient(
+                apiHttpClient,
+                new OrderUpdateResponseParser()
+        ));
+    }
 }
